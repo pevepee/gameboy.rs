@@ -99,6 +99,8 @@ impl Registers {
         } else {
             self.f &= !(mask & FLAG_MASK);
         }
+        // Garante que os 4 bits inferiores são sempre apagados
+        self.f &= FLAG_MASK;
     }
 
     #[must_use]
@@ -155,7 +157,10 @@ mod tests {
 
     #[test]
     fn flag_writes_mask_the_low_nibble() {
-        let mut regs = Registers { f: 0xFF, ..Default::default() };
+        let mut regs = Registers {
+            f: 0xFF,
+            ..Default::default()
+        };
         regs.set_z(true);
         assert_eq!(regs.f & 0x0F, 0);
     }

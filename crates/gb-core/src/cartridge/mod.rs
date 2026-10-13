@@ -141,11 +141,13 @@ impl Cartridge {
                 0
             }
         } else {
+            // Removido o `% banks` para permitir que leituras fora dos limites
+            // falhem naturalmente e devolvam 0xFF (open bus).
             match self.kind {
-                MbcKind::RomOnly => 1 % banks,
-                MbcKind::Mbc1 => ((self.bank_hi << 5) | self.rom_bank) % banks,
-                MbcKind::Mbc2 | MbcKind::Mbc3 => self.rom_bank % banks,
-                MbcKind::Mbc5 => self.rom_bank % banks,
+                MbcKind::RomOnly => 1,
+                MbcKind::Mbc1 => (self.bank_hi << 5) | self.rom_bank,
+                MbcKind::Mbc2 | MbcKind::Mbc3 => self.rom_bank,
+                MbcKind::Mbc5 => self.rom_bank,
             }
         }
     }
@@ -387,7 +389,7 @@ mod tests {
         let mut rom = vec![0u8; 0x10000];
         rom[0x0147] = 0x01;
         rom[0x0148] = 0x01;
-        rom[0x0149] = 0x00;
+        rom[0x0149] = 0x02; // <-- Alterado de 0x00 para 0x02 para declarar RAM
 
         // Mark each bank so reads can be attributed.
         for bank in 0..4usize {
