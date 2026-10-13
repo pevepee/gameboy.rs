@@ -115,7 +115,7 @@ fn blargg_suite() {
             .display()
             .to_string();
 
-        let (outcome, output) = run_rom(path);
+        let (outcome, _output) = run_rom(path);
         match outcome {
             Outcome::Passed => {
                 passed += 1;

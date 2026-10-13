@@ -155,8 +155,7 @@ mod tests {
 
     #[test]
     fn flag_writes_mask_the_low_nibble() {
-        let mut regs = Registers::default();
-        regs.f = 0xFF;
+        let mut regs = Registers { f: 0xFF, ..Default::default() };
         regs.set_z(true);
         assert_eq!(regs.f & 0x0F, 0);
     }
