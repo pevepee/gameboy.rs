@@ -14,6 +14,9 @@ pub const HEIGHT: usize = 144;
 
 /// Dots in one scanline.
 const DOTS_PER_LINE: u32 = 456;
+/// Dot at which mode 3 ends and HBlank opens. Drawing is not modelled dot by
+/// dot, so this is a fixed offset rather than a function of the sprite count.
+const HBLANK_START: u32 = 252;
 /// Last visible line index, inclusive.
 const LAST_VISIBLE_LINE: u8 = HEIGHT as u8 - 1;
 /// Last VBlank line index, inclusive.
@@ -177,6 +180,15 @@ impl Ppu {
             self.dot += step;
             remaining -= step;
 
+            // Mode 3 has a fixed length here, so HBlank opens at the same dot on
+            // every visible line and the mode 0 interrupt stays usable.
+            if self.mode == MODE_OAM && self.dot >= HBLANK_START {
+                self.mode = MODE_HBLANK;
+                if self.ly <= LAST_VISIBLE_LINE && self.stat_select & STAT_MODE_HBLANK_IRQ != 0 {
+                    irq |= interrupt::LCD_STAT;
+                }
+            }
+
             if self.dot == DOTS_PER_LINE {
                 self.dot = 0;
                 irq |= self.end_line();
@@ -196,6 +208,9 @@ impl Ppu {
 
         if self.ly == HEIGHT as u8 {
             self.mode = MODE_VBLANK;
+            // The visible area is complete, so a frontend may show the frame
+            // without waiting for the rest of VBlank.
+            self.frame_ready = true;
         } else if self.ly > LAST_VBLANK_LINE {
             self.ly = 0;
             self.window_line = 0;
@@ -227,22 +242,11 @@ impl Ppu {
         irq
     }
 
-    /// True once the dot counter has consumed dot 252 of the current line,
-    /// which is where mode 3 ends and HBlank begins.
+    /// True once the dot counter has consumed dot `HBLANK_START` of the
+    /// current line, which is where mode 3 ends and HBlank begins.
     #[must_use]
     pub fn in_hblank(&self) -> bool {
-        self.dot >= 252
-    }
-
-    /// Raise the HBlank STAT interrupt. Called by the bus once the CPU has spent
-    /// enough cycles in the line; kept separate so mode 0 is observable.
-    #[must_use]
-    pub fn hblank_irq(&self) -> u8 {
-        if self.mode() == MODE_HBLANK && self.stat_select & STAT_MODE_HBLANK_IRQ != 0 {
-            interrupt::LCD_STAT
-        } else {
-            0
-        }
+        self.dot >= HBLANK_START
     }
 
     fn render_scanline(&mut self, line: u8) {
