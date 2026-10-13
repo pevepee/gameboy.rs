@@ -619,6 +619,20 @@ impl Cpu {
                 return 8; // 8 ciclos T-states
             }
 
+            0x09 => {
+                // ADD HL, BC
+                let hl = self.regs.hl();
+                let bc = self.regs.bc();
+                let result = hl.wrapping_add(bc);
+
+                self.regs.set_n(false);
+                self.regs.set_h(((hl & 0x0FFF) + (bc & 0x0FFF)) > 0x0FFF);
+                self.regs.set_c((u32::from(hl) + u32::from(bc)) > 0xFFFF);
+                self.regs.set_hl(result);
+
+                return 8; // 8 ciclos T-states
+            }
+
             _ => panic!(
                 "unimplemented opcode {op:#04X} at {:#06X}",
                 self.regs.pc.wrapping_sub(1)
