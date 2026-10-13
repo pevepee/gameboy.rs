@@ -2,7 +2,6 @@
 
 > A Game Boy and Game Boy Color emulator in Rust, built to pass the test suites rather than to look like it works.
 
-[![CI](https://github.com/pevepee/gameboy-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/pevepee/gameboy-rs/actions/workflows/ci.yml)
 [![Blargg suite](https://img.shields.io/badge/Blargg-0%2F11-red)](docs/COMPATIBILITY.md)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange)](rust-toolchain.toml)
@@ -42,7 +41,11 @@ Two things follow from that:
 | OAM DMA with the CPU stall | Working |
 | Link port as a serial sink | Working |
 | Audio (APU) | Not started |
+<<<<<<< HEAD
 | CGB (Game Boy Color) | Partial; several peripherals and exact DMA timing are not implemented |
+=======
+| CGB (Game Boy Color) | Working |
+>>>>>>> f639a6b1a1ea5b8de70bea4b85b52bd0b8c7fe89
 
 ## Quick start
 
@@ -61,11 +64,15 @@ cargo test --release --test blargg -- --nocapture
 cargo run --release -p gb-frontend -- path/to/tetris.gb --scale 4
 ```
 
+<<<<<<< HEAD
 Cartridges marked as CGB-capable render with their in-game color palettes.
 Monochrome cartridges keep the original green LCD palette. CGB support is
 still incomplete; games that rely on unimplemented CGB peripherals may not run.
 
 ### Controls
+=======
+### Controls                
+>>>>>>> f639a6b1a1ea5b8de70bea4b85b52bd0b8c7fe89
 
 | Key | Button |
 |---|---|
@@ -75,6 +82,22 @@ still incomplete; games that rely on unimplemented CGB peripherals may not run.
 | `Enter` | Start |
 | `Backspace` | Select |
 | `Esc` | Quit |
+
+### POKEMON CONTROLS (extra)
+
+| Key | Button |
+|---|---|
+| Arrow keys | D-pad |
+| `Z` | A |
+| `X` | B |
+| `Enter` | Start |
+| `v` | Select |
+| `Esc` | Quit |
+| `DPAD_UP` | up arrow |
+| `DPAD_DOWN` | down arrow |
+| `DPAD_LEFT` | left arrow |
+| `DPAD_RIGHT` | right arrow |
+
 
 ## Layout
 
