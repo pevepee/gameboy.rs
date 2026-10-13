@@ -592,11 +592,6 @@ impl Cpu {
                 return self.execute_cb(bus, cb);
             }
 
-            _ => panic!(
-                "unimplemented opcode {op:#04X} at {:#06X}",
-                self.regs.pc.wrapping_sub(1)
-            ),
-
             0x29 => {
                 // ADD HL, HL
                 let hl = self.regs.hl();
@@ -609,6 +604,11 @@ impl Cpu {
 
                 return 8; // Devolve explicitamente os ciclos com o return
             }
+
+            _ => panic!(
+                "unimplemented opcode {op:#04X} at {:#06X}",
+                self.regs.pc.wrapping_sub(1)
+            ),
         }
 
         u32::from(BASE_CYCLES[op as usize])
