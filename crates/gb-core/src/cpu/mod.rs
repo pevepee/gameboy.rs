@@ -61,8 +61,8 @@ fn cb_cycles(cb: u8) -> u32 {
         return 8;
     }
     match cb >> 6 {
-        0 | 3 => 16,
-        _ => 12,
+        0 | 3 => 16, // rotate/shift and SET/RES on (HL): 2 memory accesses
+        _ => 12,     // BIT (HL): read only, no write back
     }
 }
 
@@ -83,6 +83,8 @@ pub struct Cpu {
     /// CPU keeps running and reads the following byte twice, which is the
     /// documented HALT bug ROMs such as Blargg's `halt_bug` test rely on.
     halt_bug: bool,
+    /// Ticks already consumed inside `execute` before the final `bus.tick()`.
+    pending_ticks: u32,
 }
 
 impl Cpu {
@@ -95,6 +97,7 @@ impl Cpu {
             stopped: false,
             ei_delay: 0,
             halt_bug: false,
+            pending_ticks: 0,
         }
     }
 
@@ -106,6 +109,7 @@ impl Cpu {
         self.stopped = false;
         self.ei_delay = 0;
         self.halt_bug = false;
+        self.pending_ticks = 0;
     }
 
     /// Execute one instruction, or service one interrupt.
@@ -140,6 +144,7 @@ impl Cpu {
             return 4;
         }
 
+        self.pending_ticks = 0;
         let opcode = self.fetch_u8(bus);
         let cycles = self.execute(bus, opcode);
 
@@ -151,17 +156,28 @@ impl Cpu {
             }
         }
 
-        bus.tick(cycles);
+        let remaining = cycles.saturating_sub(self.pending_ticks);
+        bus.tick(remaining);
+        
         cycles
     }
 
     /// Push the return address and jump to the highest-priority vector.
+    /// Push the return address and jump to the highest-priority vector.
     fn service_interrupt(&mut self, bus: &mut Bus) -> Option<u32> {
         let iflag = bus.iflag;
-        let (bit, vector) = interrupt::pending(iflag, bus.ie())?;
+        let ie = bus.ie();
+        
+        // Verifica se existe alguma interrupção pendente e ativada
+        if iflag & ie & interrupt::ALL == 0 {
+            return None;
+        }
+
+        let (bit, vector) = interrupt::pending(iflag, ie)?;
 
         self.ime = false;
         self.halted = false;
+        self.stopped = false;
         self.ei_delay = 0;
 
         bus.set_iflag(iflag & !bit);
@@ -206,7 +222,7 @@ impl Cpu {
     }
 
     /// Read a register operand by its 3-bit encoding. Index 6 is `(HL)`.
-    fn read_r(&self, bus: &Bus, index: u8) -> u8 {
+    fn read_r(&mut self, bus: &mut Bus, index: u8) -> u8 {
         match index {
             0 => self.regs.b,
             1 => self.regs.c,
@@ -214,7 +230,11 @@ impl Cpu {
             3 => self.regs.e,
             4 => self.regs.h,
             5 => self.regs.l,
-            6 => bus.read(self.regs.hl()),
+            6 => {
+                bus.tick(4);
+                self.pending_ticks += 4;
+                bus.read(self.regs.hl())
+            }
             _ => self.regs.a,
         }
     }
@@ -228,6 +248,8 @@ impl Cpu {
             4 => self.regs.h = value,
             5 => self.regs.l = value,
             6 => {
+                bus.tick(4);
+                self.pending_ticks += 4;
                 let hl = self.regs.hl();
                 bus.write(hl, value);
             }
@@ -279,22 +301,30 @@ impl Cpu {
             0x02 => {
                 let bc = self.regs.bc();
                 let a = self.regs.a;
+                bus.tick(4);
+                self.pending_ticks += 4;
                 bus.write(bc, a);
             }
             0x12 => {
                 let de = self.regs.de();
                 let a = self.regs.a;
+                bus.tick(4);
+                self.pending_ticks += 4;
                 bus.write(de, a);
             }
             0x22 => {
                 let hl = self.regs.hl();
                 let a = self.regs.a;
+                bus.tick(4);
+                self.pending_ticks += 4;
                 bus.write(hl, a);
                 self.regs.set_hl(hl.wrapping_add(1));
             }
             0x32 => {
                 let hl = self.regs.hl();
                 let a = self.regs.a;
+                bus.tick(4);
+                self.pending_ticks += 4;
                 bus.write(hl, a);
                 self.regs.set_hl(hl.wrapping_sub(1));
             }
@@ -302,19 +332,27 @@ impl Cpu {
             // LD A, (rr)
             0x0A => {
                 let bc = self.regs.bc();
+                bus.tick(4);
+                self.pending_ticks += 4;
                 self.regs.a = bus.read(bc);
             }
             0x1A => {
                 let de = self.regs.de();
+                bus.tick(4);
+                self.pending_ticks += 4;
                 self.regs.a = bus.read(de);
             }
             0x2A => {
                 let hl = self.regs.hl();
+                bus.tick(4);
+                self.pending_ticks += 4;
                 self.regs.a = bus.read(hl);
                 self.regs.set_hl(hl.wrapping_add(1));
             }
             0x3A => {
                 let hl = self.regs.hl();
+                bus.tick(4);
+                self.pending_ticks += 4;
                 self.regs.a = bus.read(hl);
                 self.regs.set_hl(hl.wrapping_sub(1));
             }
@@ -323,6 +361,8 @@ impl Cpu {
             0x08 => {
                 let addr = self.fetch_u16(bus);
                 let sp = self.regs.sp;
+                bus.tick(8);
+                self.pending_ticks += 8;
                 bus.write(addr, sp as u8);
                 bus.write(addr.wrapping_add(1), (sp >> 8) as u8);
             }
@@ -377,6 +417,12 @@ impl Cpu {
             0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x36 | 0x3E => {
                 let index = (op >> 3) & 7;
                 let value = self.fetch_u8(bus);
+                
+                if index == 6 {
+                    bus.tick(8);
+                    self.pending_ticks += 8;
+                }
+                
                 self.write_r(bus, index, value);
             }
 
@@ -530,12 +576,16 @@ impl Cpu {
             0xE0 => {
                 let offset = self.fetch_u8(bus);
                 let a = self.regs.a;
+                bus.tick(8);
+                self.pending_ticks += 8;
                 bus.write(0xFF00 + u16::from(offset), a);
             }
 
             // LDH A, (n)
             0xF0 => {
                 let offset = self.fetch_u8(bus);
+                bus.tick(8);
+                self.pending_ticks += 8;
                 self.regs.a = bus.read(0xFF00 + u16::from(offset));
             }
 
@@ -543,12 +593,16 @@ impl Cpu {
             0xE2 => {
                 let a = self.regs.a;
                 let port = 0xFF00 + u16::from(self.regs.c);
+                bus.tick(4);
+                self.pending_ticks += 4;
                 bus.write(port, a);
             }
 
             // LD A, (C)
             0xF2 => {
                 let port = 0xFF00 + u16::from(self.regs.c);
+                bus.tick(4);
+                self.pending_ticks += 4;
                 self.regs.a = bus.read(port);
             }
 
@@ -556,12 +610,16 @@ impl Cpu {
             0xEA => {
                 let addr = self.fetch_u16(bus);
                 let a = self.regs.a;
+                bus.tick(12);
+                self.pending_ticks += 12;
                 bus.write(addr, a);
             }
 
             // LD A, (nn)
             0xFA => {
                 let addr = self.fetch_u16(bus);
+                bus.tick(12);
+                self.pending_ticks += 12;
                 self.regs.a = bus.read(addr);
             }
 
@@ -602,7 +660,7 @@ impl Cpu {
                 self.regs.set_c((u32::from(hl) + u32::from(hl)) > 0xFFFF);
                 self.regs.set_hl(result);
 
-                return 8; // Devolve explicitamente os ciclos com o return
+                return 8;
             }
 
             0x39 => {
@@ -616,7 +674,7 @@ impl Cpu {
                 self.regs.set_c((u32::from(hl) + u32::from(sp)) > 0xFFFF);
                 self.regs.set_hl(result);
 
-                return 8; // 8 ciclos T-states
+                return 8;
             }
 
             0x09 => {
@@ -630,7 +688,7 @@ impl Cpu {
                 self.regs.set_c((u32::from(hl) + u32::from(bc)) > 0xFFFF);
                 self.regs.set_hl(result);
 
-                return 8; // 8 ciclos T-states
+                return 8;
             }
 
             0x19 => {
@@ -644,7 +702,7 @@ impl Cpu {
                 self.regs.set_c((u32::from(hl) + u32::from(de)) > 0xFFFF);
                 self.regs.set_hl(result);
 
-                return 8; // 8 ciclos T-states
+                return 8;
             }
 
             _ => panic!(
@@ -676,7 +734,7 @@ impl Cpu {
                 };
                 self.write_r(bus, index, result);
             }
-            // BIT: reads only, so the (HL) form costs two extra cycles not four.
+            // BIT: reads only
             1 => self.bit(value, bit),
             // RES
             2 => {
@@ -882,7 +940,6 @@ impl Cpu {
 
     fn sra(&mut self, value: u8) -> u8 {
         let carry = value & 0x01 != 0;
-        // Bit 7 is preserved, so the sign survives the shift.
         let result = (value >> 1) | (value & 0x80);
         self.finish_rotate(result, carry);
         result
@@ -915,7 +972,6 @@ impl Cpu {
         self.regs.set_z(value & (1 << bit) == 0);
         self.regs.set_n(false);
         self.regs.set_h(true);
-        // Carry is deliberately untouched by BIT.
     }
 
     fn daa(&mut self) {
@@ -960,8 +1016,6 @@ impl Cpu {
         self.regs.set_c(!carry);
     }
 
-    /// `ADD SP, e8`. The half-carry and carry come from the low byte only, which
-    /// is why the offset is added as an unsigned pair of nibbles.
     fn add_sp_e8(&mut self, bus: &mut Bus) -> u32 {
         let offset = self.fetch_u8(bus);
         let sp = self.regs.sp;
@@ -976,7 +1030,6 @@ impl Cpu {
         16
     }
 
-    /// `LD HL, SP + e8`, sharing the flag semantics of `ADD SP, e8`.
     fn ld_hl_sp_e8(&mut self, bus: &mut Bus) -> u32 {
         let offset = self.fetch_u8(bus);
         let sp = self.regs.sp;
@@ -1004,7 +1057,6 @@ mod tests {
     use super::*;
     use crate::cartridge::Cartridge;
 
-    /// A bus whose ROM is filled with `program` from `0x0100`.
     fn bus_with(program: &[u8]) -> Bus {
         let mut rom = vec![0u8; 0x8000];
         rom[0x0100..0x0100 + program.len()].copy_from_slice(program);
@@ -1028,28 +1080,24 @@ mod tests {
 
     #[test]
     fn ld_rr_nn_sets_the_pair_little_endian() {
-        // LD BC, 0x1234
         let (cpu, _) = run(&[0x01, 0x34, 0x12], 1);
         assert_eq!(cpu.regs.bc(), 0x1234);
     }
 
     #[test]
     fn ld_r_r_copies_between_registers() {
-        // LD BC,0x1234 ; LD A,B
         let (cpu, _) = run(&[0x01, 0x34, 0x12, 0x78], 2);
         assert_eq!(cpu.regs.a, 0x12);
     }
 
     #[test]
     fn ld_hl_pointer_writes_through_the_bus() {
-        // LD HL,0xC000 ; LD A,0x9A ; LD (HL),A
         let (_, bus) = run(&[0x21, 0x00, 0xC0, 0x3E, 0x9A, 0x77], 3);
         assert_eq!(bus.read(0xC000), 0x9A);
     }
 
     #[test]
     fn add_sets_half_carry_and_carry() {
-        // LD A,0xFF ; ADD A,0x01
         let (cpu, _) = run(&[0x3E, 0xFF, 0xC6, 0x01], 2);
         assert_eq!(cpu.regs.a, 0x00);
         assert!(cpu.regs.z());
@@ -1060,7 +1108,6 @@ mod tests {
 
     #[test]
     fn sub_sets_subtract_and_borrow_flags() {
-        // LD A,0x10 ; SUB 0x01
         let (cpu, _) = run(&[0x3E, 0x10, 0xD6, 0x01], 2);
         assert_eq!(cpu.regs.a, 0x0F);
         assert!(cpu.regs.n());
@@ -1070,7 +1117,6 @@ mod tests {
 
     #[test]
     fn inc_preserves_carry_and_sets_half_carry_on_nibble_overflow() {
-        // SCF ; LD A,0x0F ; INC A
         let (cpu, _) = run(&[0x37, 0x3E, 0x0F, 0x3C], 3);
         assert_eq!(cpu.regs.a, 0x10);
         assert!(cpu.regs.h());
@@ -1080,7 +1126,6 @@ mod tests {
 
     #[test]
     fn bit_leaves_carry_alone() {
-        // SCF ; LD A,0x00 ; CB 0x47 = BIT 0,A
         let (cpu, _) = run(&[0x37, 0x3E, 0x00, 0xCB, 0x47], 3);
         assert!(cpu.regs.z());
         assert!(cpu.regs.h());
@@ -1089,7 +1134,6 @@ mod tests {
 
     #[test]
     fn swap_zeroes_all_but_zero_flag() {
-        // LD A,0xF0 ; CB 0x37 = SWAP A
         let (cpu, _) = run(&[0x3E, 0xF0, 0xCB, 0x37], 2);
         assert_eq!(cpu.regs.a, 0x0F);
         assert!(!cpu.regs.c());
@@ -1098,7 +1142,6 @@ mod tests {
 
     #[test]
     fn push_then_pop_restores_a_pair() {
-        // LD BC,0xBEEF ; PUSH BC ; POP DE
         let (cpu, _) = run(&[0x01, 0xEF, 0xBE, 0xC5, 0xD1], 3);
         assert_eq!(cpu.regs.de(), 0xBEEF);
         assert_eq!(cpu.regs.sp, 0xFFFE);
@@ -1106,14 +1149,12 @@ mod tests {
 
     #[test]
     fn pop_af_masks_the_low_flag_nibble() {
-        // LD SP,0xC000 ; LD HL,0x00FF ; PUSH HL ; POP AF
         let (cpu, _) = run(&[0x31, 0x00, 0xC0, 0x21, 0xFF, 0x00, 0xE5, 0xF1], 4);
         assert_eq!(cpu.regs.f & 0x0F, 0);
     }
 
     #[test]
     fn call_then_ret_round_trips() {
-        // CALL 0x0106 ; ... ; RET
         let (cpu, _) = run(&[0xCD, 0x06, 0x01, 0x00, 0x00, 0x00, 0xC9], 2);
         assert_eq!(cpu.regs.pc, 0x0103, "RET must land on the byte after CALL");
         assert_eq!(cpu.regs.sp, 0xFFFE, "the stack must be balanced");
@@ -1121,7 +1162,6 @@ mod tests {
 
     #[test]
     fn ret_cc_not_taken_costs_eight_cycles() {
-        // SCF ; RET NZ
         let mut bus = bus_with(&[0x37, 0xC0]);
         let mut cpu = Cpu::new();
         cpu.apply_post_boot_state();
@@ -1131,32 +1171,28 @@ mod tests {
 
     #[test]
     fn jr_backwards_is_signed() {
-        // NOP ; JR -3  -> lands back on the NOP at 0x0100
         let (cpu, _) = run(&[0x00, 0x18, 0xFD], 2);
         assert_eq!(cpu.regs.pc, 0x0100);
     }
 
     #[test]
     fn add_sp_e8_uses_low_byte_carry() {
-        // LD SP,0x000F ; ADD SP,1
         let (cpu, _) = run(&[0x31, 0x0F, 0x00, 0xE8, 0x01], 2);
         assert_eq!(cpu.regs.sp, 0x0010);
-        assert!(cpu.regs.h(), "0x0F + 0x01 carries out of bit 3");
-        assert!(!cpu.regs.c(), "0x0F + 0x01 does not carry out of bit 7");
-        assert!(!cpu.regs.z(), "ADD SP,e8 always clears the zero flag");
+        assert!(cpu.regs.h());
+        assert!(!cpu.regs.c());
+        assert!(!cpu.regs.z());
         assert!(!cpu.regs.n());
     }
 
     #[test]
     fn add_sp_e8_treats_the_offset_as_signed() {
-        // LD SP,0x0010 ; ADD SP,0xFF  (a signed -1)
         let (cpu, _) = run(&[0x31, 0x10, 0x00, 0xE8, 0xFF], 2);
         assert_eq!(cpu.regs.sp, 0x000F);
     }
 
     #[test]
     fn ldh_round_trips_through_high_memory() {
-        // LD A,0x42 ; LDH (0x80),A ; LDH A,(0x80)
         let (cpu, bus) = run(&[0x3E, 0x42, 0xE0, 0x80, 0xF0, 0x80], 3);
         assert_eq!(bus.read(0xFF80), 0x42);
         assert_eq!(cpu.regs.a, 0x42);
@@ -1168,20 +1204,16 @@ mod tests {
         let mut cpu = Cpu::new();
         cpu.apply_post_boot_state();
 
-        cpu.step(&mut bus); // EI
-        assert!(
-            !cpu.ime,
-            "EI must not enable interrupts until after one more instruction"
-        );
-        cpu.step(&mut bus); // NOP
+        cpu.step(&mut bus);
+        assert!(!cpu.ime);
+        cpu.step(&mut bus);
         assert!(cpu.ime);
-        cpu.step(&mut bus); // DI
+        cpu.step(&mut bus);
         assert!(!cpu.ime);
     }
 
     #[test]
     fn halt_bug_triggers_when_ime_is_clear_and_an_irq_is_pending() {
-        // IE=TIMER, IF=TIMER, then HALT with IME clear.
         let mut bus = bus_with(&[0x76, 0x3E, 0x01]);
         bus.write(0xFFFF, 0x04);
         bus.write(0xFF0F, 0x04);
@@ -1190,11 +1222,7 @@ mod tests {
         cpu.apply_post_boot_state();
         cpu.step(&mut bus);
 
-        assert!(
-            !cpu.halted,
-            "HALT must not suspend when an IRQ is already pending"
-        );
-        // The byte after HALT is re-read, so PC stays on it for one fetch.
+        assert!(!cpu.halted);
         assert_eq!(cpu.regs.pc, 0x0101);
     }
 
@@ -1212,12 +1240,11 @@ mod tests {
         assert_eq!(cycles, 20);
         assert_eq!(cpu.regs.pc, interrupt::VBLANK_VECTOR);
         assert_eq!(bus.iflag & interrupt::VBLANK, 0);
-        assert!(!cpu.ime, "servicing an interrupt clears IME");
+        assert!(!cpu.ime);
     }
 
     #[test]
     fn interrupt_priority_follows_the_bit_order() {
-        // VBLANK and TIMER both pending: VBLANK wins.
         let mut bus = bus_with(&[0x00]);
         bus.write(0xFFFF, 0x05);
         bus.write(0xFF0F, 0x05);
@@ -1228,44 +1255,41 @@ mod tests {
         cpu.step(&mut bus);
 
         assert_eq!(cpu.regs.pc, interrupt::VBLANK_VECTOR);
-        assert_ne!(bus.iflag & interrupt::TIMER, 0, "TIMER stays pending");
+        assert_ne!(bus.iflag & interrupt::TIMER, 0);
     }
 
     #[test]
     fn conditional_call_costs_more_when_taken() {
-        // SCF ; CALL C,0x0106 ; ...
         let mut bus = bus_with(&[0x37, 0xDC, 0x06, 0x01, 0x00, 0x00, 0xC9]);
         let mut cpu = Cpu::new();
         cpu.apply_post_boot_state();
 
-        cpu.step(&mut bus); // SCF
-        assert_eq!(cpu.step(&mut bus), 24, "taken CALL C costs 24 cycles");
+        cpu.step(&mut bus);
+        assert_eq!(cpu.step(&mut bus), 24);
     }
 
     #[test]
     fn cb_hl_forms_cost_more_than_register_forms() {
-        // LD HL,0xC000 ; CB 0x06 = RLC (HL)   vs   CB 0x00 = RLC B
         let mut bus = bus_with(&[0x21, 0x00, 0xC0, 0xCB, 0x06]);
         let mut cpu = Cpu::new();
         cpu.apply_post_boot_state();
 
-        cpu.step(&mut bus); // LD HL,nn
-        assert_eq!(cpu.step(&mut bus), 16, "RLC (HL) costs 16 cycles");
+        cpu.step(&mut bus);
+        assert_eq!(cpu.step(&mut bus), 16);
 
         let mut bus = bus_with(&[0xCB, 0x00]);
         let mut cpu = Cpu::new();
         cpu.apply_post_boot_state();
-        assert_eq!(cpu.step(&mut bus), 8, "RLC B costs 8 cycles");
+        assert_eq!(cpu.step(&mut bus), 8);
     }
 
     #[test]
     fn bit_hl_costs_less_than_other_hl_forms() {
-        // LD HL,0xC000 ; CB 0x46 = BIT 0,(HL)
         let mut bus = bus_with(&[0x21, 0x00, 0xC0, 0xCB, 0x46]);
         let mut cpu = Cpu::new();
         cpu.apply_post_boot_state();
 
-        cpu.step(&mut bus); // LD HL,nn
-        assert_eq!(cpu.step(&mut bus), 12, "BIT (HL) costs 12, not 16");
+        cpu.step(&mut bus);
+        assert_eq!(cpu.step(&mut bus), 12);
     }
 }

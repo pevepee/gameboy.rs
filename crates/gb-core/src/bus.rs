@@ -21,6 +21,8 @@ pub struct Bus {
     pub joypad: Joypad,
     pub serial: Serial,
 
+    apu_regs: [u8; 0x30], // Stub para os 48 registos de som (0xFF10 a 0xFF3F)
+
     wram: [u8; WRAM_LEN],
     hram: [u8; HRAM_LEN],
     ie: u8,
@@ -47,6 +49,7 @@ impl Bus {
             timer: Timer::new(),
             joypad: Joypad::new(),
             serial: Serial::new(),
+            apu_regs: [0; 0x30],
             wram: [0; WRAM_LEN],
             hram: [0; HRAM_LEN],
             ie: 0,
@@ -149,7 +152,8 @@ impl Bus {
             0xFF49 => self.ppu.obp1,
             0xFF4A => self.ppu.wy,
             0xFF4B => self.ppu.wx,
-            _ => 0xFF,
+            0xFF10..=0xFF3F => self.apu_regs[(addr - 0xFF10) as usize],
+             _ => 0xFF,
         }
     }
 
@@ -176,6 +180,7 @@ impl Bus {
             0xFF49 => self.ppu.obp1 = value,
             0xFF4A => self.ppu.wy = value,
             0xFF4B => self.ppu.wx = value,
+            0xFF10..=0xFF3F => self.apu_regs[(addr - 0xFF10) as usize] = value,
             _ => self.unmapped_writes += 1,
         }
     }
