@@ -65,8 +65,8 @@ pub struct Emulator {
     gb: GameBoy,
     /// RGBA8 copy of the framebuffer, rebuilt once per frame.
     ///
-    /// The core produces one byte per pixel of color index; the browser needs
-    /// RGBA. Keeping the expanded buffer here means the JS side never converts.
+    /// The core produces RGB colors; the browser needs RGBA. Keeping the
+    /// expanded buffer here means the JS side never converts.
     rgba: Vec<u8>,
 }
 
@@ -128,21 +128,13 @@ impl Emulator {
         self.gb.bus.cart.title().to_string()
     }
 
-    /// Expand the 2-bit color indices into RGBA using the DMG LCD shades.
+    /// Expand the resolved RGB colors into the browser's RGBA format.
     fn expand_framebuffer(&mut self) {
-        const PALETTE: [[u8; 3]; 4] = [
-            [0x0F, 0x38, 0x0F],
-            [0x30, 0x62, 0x30],
-            [0x8B, 0xAC, 0x0F],
-            [0x9B, 0xBC, 0x0F],
-        ];
-
-        for (index, &color) in self.gb.framebuffer().iter().enumerate() {
-            let [r, g, b] = PALETTE[usize::from(color & 0b11)];
+        for (index, &color) in self.gb.framebuffer_rgb().iter().enumerate() {
             let base = index * 4;
-            self.rgba[base] = r;
-            self.rgba[base + 1] = g;
-            self.rgba[base + 2] = b;
+            self.rgba[base] = (color >> 16) as u8;
+            self.rgba[base + 1] = (color >> 8) as u8;
+            self.rgba[base + 2] = color as u8;
             self.rgba[base + 3] = 0xFF;
         }
     }

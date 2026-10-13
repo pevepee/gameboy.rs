@@ -53,6 +53,7 @@ const STAT_MODE_OAM_IRQ: u8 = 1 << 5;
 const STAT_LYC_IRQ: u8 = 1 << 6;
 
 pub struct Ppu {
+    pub cgb_mode: bool,
     pub lcdc: u8,
     /// Mode interrupt selects plus the unused bit 7. Mode bits 0-1 are read-only.
     stat_select: u8,
@@ -66,12 +67,19 @@ pub struct Ppu {
     pub wy: u8,
     pub wx: u8,
 
-    pub vram: [u8; 0x2000],
+    pub vram: [[u8; 0x2000]; 2],
+    pub vram_bank: u8,
     pub oam: [u8; 0xA0],
+    bg_palette_index: u8,
+    obj_palette_index: u8,
+    bg_palette_data: [u8; 64],
+    obj_palette_data: [u8; 64],
 
     /// One byte per pixel holding the raw 2-bit color index, not a shade.
     /// The frontend applies the DMG green palette at display time.
     pub framebuffer: [u8; WIDTH * HEIGHT],
+    /// Display colors in 0x00RRGGBB format, one per pixel.
+    pub framebuffer_rgb: [u32; WIDTH * HEIGHT],
 
     /// Position inside the current scanline, in dots.
     dot: u32,
@@ -85,7 +93,13 @@ pub struct Ppu {
 impl Ppu {
     #[must_use]
     pub fn new() -> Self {
+        Self::with_cgb_mode(false)
+    }
+
+    #[must_use]
+    pub fn with_cgb_mode(cgb_mode: bool) -> Self {
         Self {
+            cgb_mode,
             lcdc: 0,
             stat_select: 0,
             scy: 0,
@@ -97,9 +111,15 @@ impl Ppu {
             obp1: 0,
             wy: 0,
             wx: 0,
-            vram: [0; 0x2000],
+            vram: [[0; 0x2000]; 2],
+            vram_bank: 0,
             oam: [0; 0xA0],
+            bg_palette_index: 0,
+            obj_palette_index: 0,
+            bg_palette_data: [0; 64],
+            obj_palette_data: [0; 64],
             framebuffer: [0; WIDTH * HEIGHT],
+            framebuffer_rgb: [0; WIDTH * HEIGHT],
             dot: 0,
             mode: MODE_OAM,
             window_line: 0,
@@ -127,6 +147,66 @@ impl Ppu {
         self.mode = MODE_OAM;
         self.window_line = 0;
         self.frame_ready = false;
+        self.vram_bank = 0;
+        self.bg_palette_index = 0;
+        self.obj_palette_index = 0;
+        self.bg_palette_data = [0; 64];
+        self.obj_palette_data = [0; 64];
+        for palette in 0..8 {
+            for (color, value) in [0x7FFFu16, 0x56B5, 0x294A, 0x0000].into_iter().enumerate() {
+                let index = palette * 8 + color * 2;
+                self.bg_palette_data[index] = value as u8;
+                self.bg_palette_data[index + 1] = (value >> 8) as u8;
+                self.obj_palette_data[index] = value as u8;
+                self.obj_palette_data[index + 1] = (value >> 8) as u8;
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn bg_palette_index(&self) -> u8 {
+        self.bg_palette_index | 0x40
+    }
+
+    pub fn write_bg_palette_index(&mut self, value: u8) {
+        self.bg_palette_index = value & 0xBF;
+    }
+
+    #[must_use]
+    pub fn bg_palette_data(&self) -> u8 {
+        let index = usize::from(self.bg_palette_index & 0x3F);
+        self.bg_palette_data[index] | if index & 1 != 0 { 0x80 } else { 0 }
+    }
+
+    pub fn write_bg_palette_data(&mut self, value: u8) {
+        let index = usize::from(self.bg_palette_index & 0x3F);
+        self.bg_palette_data[index] = value & if index & 1 != 0 { 0x7F } else { 0xFF };
+        if self.bg_palette_index & 0x80 != 0 {
+            self.bg_palette_index = (self.bg_palette_index & 0x80) | ((index as u8 + 1) & 0x3F);
+        }
+    }
+
+    #[must_use]
+    pub fn obj_palette_index(&self) -> u8 {
+        self.obj_palette_index | 0x40
+    }
+
+    pub fn write_obj_palette_index(&mut self, value: u8) {
+        self.obj_palette_index = value & 0xBF;
+    }
+
+    #[must_use]
+    pub fn obj_palette_data(&self) -> u8 {
+        let index = usize::from(self.obj_palette_index & 0x3F);
+        self.obj_palette_data[index] | if index & 1 != 0 { 0x80 } else { 0 }
+    }
+
+    pub fn write_obj_palette_data(&mut self, value: u8) {
+        let index = usize::from(self.obj_palette_index & 0x3F);
+        self.obj_palette_data[index] = value & if index & 1 != 0 { 0x7F } else { 0xFF };
+        if self.obj_palette_index & 0x80 != 0 {
+            self.obj_palette_index = (self.obj_palette_index & 0x80) | ((index as u8 + 1) & 0x3F);
+        }
     }
 
     #[must_use]
@@ -251,16 +331,22 @@ impl Ppu {
 
     fn render_scanline(&mut self, line: u8) {
         let mut bg_color_index = [0u8; WIDTH];
-        self.render_bg_line(line, &mut bg_color_index);
+        let mut bg_priority = [false; WIDTH];
+        self.render_bg_line(line, &mut bg_color_index, &mut bg_priority);
 
-        if self.render_window_line(line, &mut bg_color_index) {
+        if self.render_window_line(line, &mut bg_color_index, &mut bg_priority) {
             self.window_line = self.window_line.wrapping_add(1);
         }
 
-        self.render_obj_line(line, &bg_color_index);
+        self.render_obj_line(line, &bg_color_index, &bg_priority);
     }
 
-    fn render_bg_line(&mut self, line: u8, color_out: &mut [u8; WIDTH]) {
+    fn render_bg_line(
+        &mut self,
+        line: u8,
+        color_out: &mut [u8; WIDTH],
+        priority_out: &mut [bool; WIDTH],
+    ) {
         let row = line.wrapping_add(self.scy);
         let map_base = if self.lcdc & LCDC_BG_MAP != 0 {
             0x1C00
@@ -270,16 +356,32 @@ impl Ppu {
 
         for (x, slot) in color_out.iter_mut().enumerate() {
             let col = (x as u8).wrapping_add(self.scx);
-            let tile = self.tile_index(map_base, row, col);
-            let bits = self.tile_row_bits(tile, col, row);
+            let (tile, attr) = self.tile_entry(map_base, row, col);
+            let bits = self.tile_row_bits(tile, col, row, attr);
             *slot = bits;
-            self.framebuffer[line as usize * WIDTH + x] = self.apply_palette(bits, self.bgp);
+            priority_out[x] = self.cgb_mode && attr & 0x80 != 0;
+            let pixel = line as usize * WIDTH + x;
+            self.framebuffer[pixel] = if self.cgb_mode {
+                bits
+            } else {
+                self.apply_palette(bits, self.bgp)
+            };
+            self.framebuffer_rgb[pixel] = if self.cgb_mode {
+                self.color_from_palette(&self.bg_palette_data, attr & 0x07, bits)
+            } else {
+                dmg_rgb(self.apply_palette(bits, self.bgp))
+            };
         }
     }
 
     /// Returns `true` when this line drew window pixels, so the caller can
     /// advance the window line counter.
-    fn render_window_line(&mut self, line: u8, color_out: &mut [u8; WIDTH]) -> bool {
+    fn render_window_line(
+        &mut self,
+        line: u8,
+        color_out: &mut [u8; WIDTH],
+        priority_out: &mut [bool; WIDTH],
+    ) -> bool {
         if self.lcdc & LCDC_WINDOW_ENABLE == 0 || self.wy > line {
             return false;
         }
@@ -298,16 +400,27 @@ impl Ppu {
 
         for (x, slot) in color_out.iter_mut().enumerate().skip(start) {
             let col = (x - start) as u8;
-            let tile = self.tile_index(map_base, row, col);
-            let bits = self.tile_row_bits(tile, col, row);
+            let (tile, attr) = self.tile_entry(map_base, row, col);
+            let bits = self.tile_row_bits(tile, col, row, attr);
             *slot = bits;
-            self.framebuffer[line as usize * WIDTH + x] = self.apply_palette(bits, self.bgp);
+            priority_out[x] = self.cgb_mode && attr & 0x80 != 0;
+            let pixel = line as usize * WIDTH + x;
+            self.framebuffer[pixel] = if self.cgb_mode {
+                bits
+            } else {
+                self.apply_palette(bits, self.bgp)
+            };
+            self.framebuffer_rgb[pixel] = if self.cgb_mode {
+                self.color_from_palette(&self.bg_palette_data, attr & 0x07, bits)
+            } else {
+                dmg_rgb(self.apply_palette(bits, self.bgp))
+            };
         }
 
         true
     }
 
-    fn render_obj_line(&mut self, line: u8, bg_color: &[u8; WIDTH]) {
+    fn render_obj_line(&mut self, line: u8, bg_color: &[u8; WIDTH], bg_priority: &[bool; WIDTH]) {
         if self.lcdc & LCDC_OBJ_ENABLE == 0 {
             return;
         }
@@ -347,13 +460,14 @@ impl Ppu {
             let flip_y = attr & 0x40 != 0;
             let flip_x = attr & 0x20 != 0;
             let behind_bg = attr & 0x80 != 0;
-            let palette = if attr & 0x10 != 0 {
+            let dmg_palette = if attr & 0x10 != 0 {
                 self.obp1
             } else {
                 self.obp0
             };
 
             let tile = if tall { raw_tile & 0xFE } else { raw_tile };
+            let tile_attr = if self.cgb_mode { attr } else { 0 };
 
             let mut row = (line as i16 - sprite_y) as u8;
             if flip_y {
@@ -368,7 +482,7 @@ impl Ppu {
                 let sx = screen_x as usize;
 
                 let bit = if flip_x { 7 - px } else { px };
-                let bits = self.tile_row_bits(tile, bit, row);
+                let bits = self.tile_row_bits(tile, bit, row, tile_attr);
 
                 // Color 0 is transparent for sprites.
                 if bits == 0 {
@@ -376,20 +490,40 @@ impl Ppu {
                 }
                 // BG-to-OBJ priority: with bit 7 set the sprite hides behind
                 // any non-zero BG color index.
-                if behind_bg && bg_color[sx] != 0 {
+                let bg_is_opaque = bg_color[sx] != 0
+                    && (!self.cgb_mode || self.lcdc & 0x01 != 0)
+                    && (behind_bg || bg_priority[sx]);
+                if bg_is_opaque {
                     continue;
                 }
 
-                self.framebuffer[line as usize * WIDTH + sx] = self.apply_palette(bits, palette);
+                let pixel = line as usize * WIDTH + sx;
+                if self.cgb_mode {
+                    self.framebuffer[pixel] = bits;
+                    self.framebuffer_rgb[pixel] =
+                        self.color_from_palette(&self.obj_palette_data, attr & 0x07, bits);
+                } else {
+                    let shade = self.apply_palette(bits, dmg_palette);
+                    self.framebuffer[pixel] = shade;
+                    self.framebuffer_rgb[pixel] = dmg_rgb(shade);
+                }
             }
         }
     }
 
     /// Tile map entry for a position in the 256x256 background map.
-    fn tile_index(&self, map_base: usize, row: u8, col: u8) -> u8 {
+    fn tile_entry(&self, map_base: usize, row: u8, col: u8) -> (u8, u8) {
         let map_x = (col / 8) as usize;
         let map_y = (row / 8) as usize;
-        self.vram[map_base + map_y * 32 + map_x]
+        let index = map_base + map_y * 32 + map_x;
+        (
+            self.vram[0][index],
+            if self.cgb_mode {
+                self.vram[1][index]
+            } else {
+                0
+            },
+        )
     }
 
     /// Two-bit color index for one pixel of a tile row.
@@ -400,19 +534,44 @@ impl Ppu {
     ///
     /// In signed tile data mode (LCDC bit 4 clear) the index is read as `i8` and
     /// offsets from `0x9000`, which lands in VRAM 0x0800-0x17F0.
-    fn tile_row_bits(&self, tile: u8, col: u8, row: u8) -> u8 {
+    fn tile_row_bits(&self, tile: u8, col: u8, row: u8, attr: u8) -> u8 {
         let base = if self.lcdc & LCDC_TILE_DATA != 0 {
             tile as usize * 16
         } else {
             (0x1000i32 + (tile as i8 as i32) * 16) as usize
         };
 
+        let row = if attr & 0x40 != 0 {
+            if row >= 8 {
+                15 - row
+            } else {
+                7 - row
+            }
+        } else {
+            row % 8
+        };
+        let col = if attr & 0x20 != 0 {
+            7 - col % 8
+        } else {
+            col % 8
+        };
         let r = row as usize;
-        let low = self.vram[base + r * 2];
-        let high = self.vram[base + r * 2 + 1];
-        let bit = 7 - (col % 8);
+        let bank = usize::from(self.cgb_mode && attr & 0x08 != 0);
+        let low = self.vram[bank][base + r * 2];
+        let high = self.vram[bank][base + r * 2 + 1];
+        let bit = 7 - col;
 
         (((high >> bit) & 1) << 1) | ((low >> bit) & 1)
+    }
+
+    fn color_from_palette(&self, palette: &[u8; 64], palette_id: u8, color: u8) -> u32 {
+        let index = usize::from(palette_id) * 8 + usize::from(color) * 2;
+        let value = u16::from(palette[index]) | (u16::from(palette[index + 1] & 0x7F) << 8);
+        let r = (value & 0x1F) as u8;
+        let g = ((value >> 5) & 0x1F) as u8;
+        let b = ((value >> 10) & 0x1F) as u8;
+        let expand = |component: u8| (component << 3) | (component >> 2);
+        (u32::from(expand(r)) << 16) | (u32::from(expand(g)) << 8) | u32::from(expand(b))
     }
 
     fn apply_palette(&self, color: u8, palette: u8) -> u8 {
@@ -423,5 +582,45 @@ impl Ppu {
 impl Default for Ppu {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn dmg_rgb(shade: u8) -> u32 {
+    const DMG_RGB: [u32; 4] = [0x0F380F, 0x306230, 0x8BAC0F, 0x9BBC0F];
+    DMG_RGB[usize::from(shade & 0b11)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cgb_background_uses_rgb_palette_data() {
+        let mut ppu = Ppu::with_cgb_mode(true);
+        ppu.write_lcdc(0x91);
+        ppu.vram[0][0] = 0xFF;
+        ppu.write_bg_palette_index(0x82);
+        ppu.write_bg_palette_data(0x1F);
+        ppu.write_bg_palette_data(0x00);
+
+        ppu.tick(DOTS_PER_LINE);
+
+        assert_eq!(ppu.framebuffer[0], 1);
+        assert_eq!(ppu.framebuffer_rgb[0], 0xFF0000);
+    }
+
+    #[test]
+    fn cgb_tile_attributes_select_palette_and_tile_data_bank() {
+        let mut ppu = Ppu::with_cgb_mode(true);
+        ppu.write_lcdc(0x91);
+        ppu.vram[1][0] = 0xFF;
+        ppu.vram[1][0x1800] = 0x0A;
+        ppu.write_bg_palette_index(0x92);
+        ppu.write_bg_palette_data(0xE0);
+        ppu.write_bg_palette_data(0x03);
+
+        ppu.tick(DOTS_PER_LINE);
+
+        assert_eq!(ppu.framebuffer_rgb[0], 0x00FF00);
     }
 }

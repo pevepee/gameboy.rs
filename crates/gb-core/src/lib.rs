@@ -1,4 +1,4 @@
-//! A cycle-driven emulator for the original Game Boy (DMG).
+//! A cycle-driven emulator for the Game Boy and Game Boy Color.
 //!
 //! The public surface is one type, [`GameBoy`], plus the pieces you need to
 //! drive it: [`Button`] for input and the framebuffer slice for video.
@@ -17,8 +17,8 @@
 //! # }
 //! ```
 //!
-//! Rendering is not part of this crate. The PPU writes raw 2-bit color indices
-//! into [`GameBoy::framebuffer`]; the frontend decides what those look like.
+//! The PPU exposes both raw pixel indices and resolved RGB colors. The latter
+//! uses the active CGB palettes when the cartridge is color-capable.
 
 pub mod bus;
 pub mod cartridge;
@@ -71,6 +71,9 @@ impl GameBoy {
 
         let mut cpu = Cpu::new();
         cpu.apply_post_boot_state();
+        if bus.ppu.cgb_mode {
+            cpu.regs = crate::cpu::Registers::post_boot_cgb();
+        }
 
         Self { cpu, bus }
     }
@@ -79,6 +82,18 @@ impl GameBoy {
     #[must_use]
     pub fn framebuffer(&self) -> &[u8] {
         &self.bus.ppu.framebuffer
+    }
+
+    /// Resolved screen colors in `0x00RRGGBB` format, row-major.
+    #[must_use]
+    pub fn framebuffer_rgb(&self) -> &[u32] {
+        &self.bus.ppu.framebuffer_rgb
+    }
+
+    /// Whether the cartridge is running with Game Boy Color hardware enabled.
+    #[must_use]
+    pub fn is_cgb_mode(&self) -> bool {
+        self.bus.ppu.cgb_mode
     }
 
     /// Everything the ROM has written to the link port, in order.
@@ -208,5 +223,41 @@ mod tests {
     fn framebuffer_is_screen_sized() {
         let gb = GameBoy::new(tiny_rom()).unwrap();
         assert_eq!(gb.framebuffer().len(), WIDTH * HEIGHT);
+        assert_eq!(gb.framebuffer_rgb().len(), WIDTH * HEIGHT);
+    }
+
+    #[test]
+    fn cgb_stop_switches_speed_when_key1_is_prepared() {
+        let mut rom = tiny_rom();
+        rom[header::CGB_FLAG] = 0x80;
+        rom[0x0100..0x0104].copy_from_slice(&[0x10, 0x00, 0x10, 0x00]);
+        rom[0x014D] = header::checksum(&rom).unwrap();
+        let mut gb = GameBoy::new_lossy(rom).unwrap();
+
+        gb.bus.write(0xFF4D, 1);
+        gb.step();
+        assert!(gb.bus.double_speed());
+        assert!(!gb.cpu.stopped);
+
+        gb.step();
+        assert!(
+            gb.cpu.stopped,
+            "STOP without KEY1 prepare must stop the CPU"
+        );
+    }
+
+    #[test]
+    fn cgb_cartridge_selects_color_hardware_and_boot_registers() {
+        let mut rom = tiny_rom();
+        rom[header::CGB_FLAG] = 0x80;
+        rom[0x014D] = header::checksum(&rom).unwrap();
+
+        let gb = GameBoy::new(rom).unwrap();
+
+        assert!(gb.is_cgb_mode());
+        assert_eq!(gb.cpu.regs.af(), 0x1180);
+        assert_eq!(gb.cpu.regs.bc(), 0x0000);
+        assert_eq!(gb.cpu.regs.de(), 0xFF56);
+        assert_eq!(gb.cpu.regs.hl(), 0x000D);
     }
 }

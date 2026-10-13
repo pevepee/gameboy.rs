@@ -28,11 +28,11 @@ GameBoy
 ├── Cpu          registers, IME, EI delay, HALT bug latch
 └── Bus
     ├── Cartridge  ROM, RAM, MBC state, MBC3 RTC
-    ├── Ppu        VRAM, OAM, register file, framebuffer
+    ├── Ppu        dual-bank VRAM, OAM, register file, RGB framebuffer
     ├── Timer      one 16-bit divider behind DIV/TIMA/TMA/TAC
     ├── Joypad     a 2x4 active-low matrix
     └── Serial     SB/SC, accumulated output
-    plus wram, hram, IE, IF, the OAM DMA stall counter
+    plus banked WRAM, hram, IE, IF, the OAM DMA stall counter
 ```
 
 Everything is a plain owned value. `GameBoy` is `Send`, has no destructor
@@ -100,6 +100,14 @@ joypad wake, and no ROM in our suite depends on it.
 
 There is no APU. `0xFF10..=0xFF3F` reads return `0xFF` and writes are counted in
 `Bus::unmapped_writes`. `dmg_sound` tests are expected to fail.
+
+### CGB
+
+CGB-capable cartridges select the CGB memory map and renderer. Implemented
+pieces include VRAM and WRAM banking, tile attributes, 15-bit BG/OBJ palettes,
+KEY1 speed switching, and general/HBlank HDMA. HDMA copying is block-based
+rather than cycle-accurate, and several other CGB peripherals are not
+implemented, so this is not yet broad compatibility with commercial CGB games.
 
 ## Diagnostics
 

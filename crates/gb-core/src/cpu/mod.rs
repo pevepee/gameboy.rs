@@ -276,7 +276,9 @@ impl Cpu {
             0x10 => {
                 // STOP is two bytes wide; the padding byte is discarded.
                 let _ = self.fetch_u8(bus);
-                self.stopped = true;
+                if !bus.switch_speed_if_prepared() {
+                    self.stopped = true;
+                }
             }
 
             // LD rr, nn

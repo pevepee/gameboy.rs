@@ -48,6 +48,23 @@ impl Registers {
         }
     }
 
+    /// Value the CGB boot ROM leaves in the registers.
+    #[must_use]
+    pub fn post_boot_cgb() -> Self {
+        Self {
+            a: 0x11,
+            f: 0x80,
+            b: 0x00,
+            c: 0x00,
+            d: 0xFF,
+            e: 0x56,
+            h: 0x00,
+            l: 0x0D,
+            sp: 0xFFFE,
+            pc: 0x0100,
+        }
+    }
+
     #[must_use]
     pub fn af(&self) -> u16 {
         u16::from(self.a) << 8 | u16::from(self.f)

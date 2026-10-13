@@ -1,6 +1,6 @@
 # gameboy-rs
 
-> A Game Boy (DMG) emulator in Rust, built to pass the test suites rather than to look like it works.
+> A Game Boy and Game Boy Color emulator in Rust, built to pass the test suites rather than to look like it works.
 
 [![CI](https://github.com/pevepee/gameboy-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/pevepee/gameboy-rs/actions/workflows/ci.yml)
 [![Blargg suite](https://img.shields.io/badge/Blargg-0%2F11-red)](docs/COMPATIBILITY.md)
@@ -37,10 +37,12 @@ Two things follow from that:
 | Timer (DIV/TIMA/TMA/TAC) with the shared divider | Working |
 | Cartridge mappers: ROM-only, MBC1, MBC2, MBC3 (+RTC), MBC5 | Working |
 | PPU: background, window, sprites, palettes, STAT/LYC interrupts | Working |
+| CGB graphics: tile attributes, 8 BG/OBJ palettes, two VRAM banks | Partial |
+| CGB memory: banked WRAM and speed switching | Partial |
 | OAM DMA with the CPU stall | Working |
 | Link port as a serial sink | Working |
 | Audio (APU) | Not started |
-| CGB (Game Boy Color) | Out of scope |
+| CGB (Game Boy Color) | Partial; several peripherals and exact DMA timing are not implemented |
 
 ## Quick start
 
@@ -58,6 +60,10 @@ cargo test --release --test blargg -- --nocapture
 # Play something.
 cargo run --release -p gb-frontend -- path/to/tetris.gb --scale 4
 ```
+
+Cartridges marked as CGB-capable render with their in-game color palettes.
+Monochrome cartridges keep the original green LCD palette. CGB support is
+still incomplete; games that rely on unimplemented CGB peripherals may not run.
 
 ### Controls
 
@@ -96,8 +102,8 @@ let rom = std::fs::read("tetris.gb")?;
 let mut gb = GameBoy::new(rom)?;
 
 loop {
-    // framebuffer() is 160x144 bytes of 2-bit color indices, row-major.
-    let _screen = gb.framebuffer();
+    // framebuffer_rgb() is 160x144 resolved 0x00RRGGBB pixels, row-major.
+    let _screen = gb.framebuffer_rgb();
     gb.run_frame();
 }
 
@@ -127,6 +133,7 @@ Current score: see [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 - [x] Mappers MBC1/MBC2/MBC3/MBC5
 - [x] PPU with background, window and sprites
 - [ ] PPU FIFO, for mid-scanline register effects
+- [ ] Remaining CGB peripherals and exact DMA timing
 - [ ] APU, all four channels
 - [ ] Save states
 - [ ] Battery-backed `.sav` persistence in the frontend
