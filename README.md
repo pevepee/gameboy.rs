@@ -2,7 +2,7 @@
 
 > A Game Boy (DMG) emulator in Rust, built to pass the test suites rather than to look like it works.
 
-[![CI](https://github.com/pevepee/gameboy-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/pevepee/gameboy-rs/actions/workflows/ci.yml)
+[![CI]([https://github.com/pevepee/gameboy-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/pevepee/gameboy-rs/actions/workflows/ci.yml](https://camo.githubusercontent.com/90ef6dc202787fa0ce3fd70e32f30382415d5c134d5be5978ce42cd42b22187d/68747470733a2f2f696d672e736869656c64732e696f2f656e64706f696e743f7374796c653d666c61742d7371756172652675726c3d6874747073253341253246253246676973742e67697468756275736572636f6e74656e742e636f6d2532464761656c4769726f646f6e25324637313563363237313735313966363334313835616630656264653233343939322532467261772532467265706f2d676f2d74657374732e6a736f6e))
 [![Blargg suite](https://img.shields.io/badge/Blargg-0%2F11-red)](docs/COMPATIBILITY.md)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange)](rust-toolchain.toml)
