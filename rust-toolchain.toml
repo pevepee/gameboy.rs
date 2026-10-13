@@ -1,4 +1,8 @@
+# The toolchain is pinned here so local and CI builds agree.
+#
+# Deliberately no `targets` key: rustup honours it on every `cargo` invocation,
+# which would make each CI job download the wasm target even when it builds for
+# the host. The wasm job asks for the target explicitly instead.
 [toolchain]
 channel = "stable"
 components = ["rustfmt", "clippy"]
-targets = ["wasm32-unknown-unknown"]

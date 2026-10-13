@@ -104,6 +104,10 @@ impl Ppu {
         }
     }
 
+    pub fn write_lyc(&mut self, value: u8) {
+        self.lyc = value;
+    }
+
     pub fn apply_boot_state(&mut self) {
         self.lcdc = 0x91;
         self.stat_select = 0x80;

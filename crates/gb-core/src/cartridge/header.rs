@@ -147,9 +147,15 @@ mod tests {
     use super::*;
 
     /// A header whose fields are all zero except the pieces under test.
+    ///
+    /// Short titles are right-padded, because the title field is a fixed 16-byte
+    /// window and `copy_from_slice` requires exact lengths.
     fn synthetic(title: &[u8]) -> Vec<u8> {
         let mut rom = vec![0u8; 0x8000];
-        rom[TITLE_RANGE].copy_from_slice(title);
+        let width = TITLE_RANGE.len();
+        let used = title.len().min(width);
+        let start = TITLE_RANGE.start;
+        rom[start..start + used].copy_from_slice(&title[..used]);
         rom
     }
 

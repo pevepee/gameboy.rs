@@ -15,6 +15,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Formatting gets its own job on purpose. Sharing a job with clippy and the
+  # tests means one rustfmt diff aborts the job before anything is compiled, so
+  # every platform fails identically and the real errors stay hidden.
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -27,7 +40,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
 
@@ -40,9 +53,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libxkbcommon-dev libx11-dev libxcb1-dev libxcb-randr0-dev \
             libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -78,6 +88,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Requested here rather than in rust-toolchain.toml, so the host-only jobs
+      # do not each download the wasm target.
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown

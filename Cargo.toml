@@ -20,7 +20,8 @@ gb-core = { path = "crates/gb-core" }
 [profile.release]
 lto = "thin"
 codegen-units = 1
-panic = "abort"
+# No `panic = "abort"` here. It is ignored for test targets, so it buys nothing
+# in CI and only makes `cargo test --release` print a warning.
 
 # The Blargg suite is slow under debug assertions; profile it like a release.
 [profile.test]
