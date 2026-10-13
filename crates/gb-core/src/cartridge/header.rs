@@ -92,7 +92,7 @@ impl Header {
     /// ROM size in bytes, derived from the size code.
     #[must_use]
     pub fn rom_size(&self) -> usize {
-        32 * 1024 << self.rom_size_code.min(8)
+        (32 * 1024) << self.rom_size_code.min(8)
     }
 
     /// External RAM size in bytes, derived from the size code.
