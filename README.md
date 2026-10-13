@@ -58,7 +58,7 @@ cargo test --release --test blargg -- --nocapture
 cargo run --release -p gb-frontend -- path/to/tetris.gb --scale 4
 ```
 
-### Controls
+### Controls                
 
 | Key | Button |
 |---|---|
@@ -68,6 +68,22 @@ cargo run --release -p gb-frontend -- path/to/tetris.gb --scale 4
 | `Enter` | Start |
 | `Backspace` | Select |
 | `Esc` | Quit |
+
+### POKEMON CONTROLS (extra)
+
+| Key | Button |
+|---|---|
+| Arrow keys | D-pad |
+| `Z` | A |
+| `X` | B |
+| `Enter` | Start |
+| `v` | Select |
+| `Esc` | Quit |
+| `DPAD_UP` | up arrow |
+| `DPAD_DOWN` | down arrow |
+| `DPAD_LEFT` | left arrow |
+| `DPAD_RIGHT` | right arrow |
+
 
 ## Layout
 
