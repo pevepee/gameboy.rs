@@ -153,7 +153,7 @@ impl Bus {
             0xFF4A => self.ppu.wy,
             0xFF4B => self.ppu.wx,
             0xFF10..=0xFF3F => self.apu_regs[(addr - 0xFF10) as usize],
-             _ => 0xFF,
+            _ => 0xFF,
         }
     }
 

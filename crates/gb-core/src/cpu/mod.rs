@@ -61,8 +61,8 @@ fn cb_cycles(cb: u8) -> u32 {
         return 8;
     }
     match cb >> 6 {
-        0 | 3 => 16, // rotate/shift and SET/RES on (HL): 2 memory accesses
-        _ => 12,     // BIT (HL): read only, no write back
+        0 | 2 | 3 => 16, // rotate/shift, RES, and SET on (HL): 2 memory accesses
+        _ => 12,         // BIT (HL): read only, no write back
     }
 }
 
@@ -158,7 +158,7 @@ impl Cpu {
 
         let remaining = cycles.saturating_sub(self.pending_ticks);
         bus.tick(remaining);
-        
+
         cycles
     }
 
@@ -167,7 +167,7 @@ impl Cpu {
     fn service_interrupt(&mut self, bus: &mut Bus) -> Option<u32> {
         let iflag = bus.iflag;
         let ie = bus.ie();
-        
+
         // Verifica se existe alguma interrupção pendente e ativada
         if iflag & ie & interrupt::ALL == 0 {
             return None;
@@ -417,12 +417,12 @@ impl Cpu {
             0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x36 | 0x3E => {
                 let index = (op >> 3) & 7;
                 let value = self.fetch_u8(bus);
-                
+
                 if index == 6 {
                     bus.tick(8);
                     self.pending_ticks += 8;
                 }
-                
+
                 self.write_r(bus, index, value);
             }
 
@@ -1281,6 +1281,16 @@ mod tests {
         let mut cpu = Cpu::new();
         cpu.apply_post_boot_state();
         assert_eq!(cpu.step(&mut bus), 8);
+    }
+
+    #[test]
+    fn res_hl_costs_like_other_modify_hl_forms() {
+        let mut bus = bus_with(&[0x21, 0x00, 0xC0, 0xCB, 0x86]);
+        let mut cpu = Cpu::new();
+        cpu.apply_post_boot_state();
+
+        cpu.step(&mut bus);
+        assert_eq!(cpu.step(&mut bus), 16);
     }
 
     #[test]
