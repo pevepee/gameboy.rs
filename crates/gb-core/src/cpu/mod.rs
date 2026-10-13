@@ -596,6 +596,19 @@ impl Cpu {
                 "unimplemented opcode {op:#04X} at {:#06X}",
                 self.regs.pc.wrapping_sub(1)
             ),
+
+            0x29 => {
+                // ADD HL, HL
+                let hl = self.regs.hl();
+                let result = hl.wrapping_add(hl);
+
+                self.regs.set_n(false);
+                self.regs.set_h(((hl & 0x0FFF) + (hl & 0x0FFF)) > 0x0FFF);
+                self.regs.set_c((u32::from(hl) + u32::from(hl)) > 0xFFFF);
+                self.regs.set_hl(result);
+
+                return 8; // Devolve explicitamente os ciclos com o return
+            }
         }
 
         u32::from(BASE_CYCLES[op as usize])
