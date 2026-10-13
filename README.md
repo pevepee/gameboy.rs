@@ -41,7 +41,6 @@ Two things follow from that:
 | OAM DMA with the CPU stall | Working |
 | Link port as a serial sink | Working |
 | Audio (APU) | Not started |
-| CGB (Game Boy Color) | Partial; several peripherals and exact DMA timing are not implemented |
 | CGB (Game Boy Color) | Working |
 
 ## Quick start
