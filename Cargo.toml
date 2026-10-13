@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gb-core",
+    "crates/gb-frontend",
+    "crates/gb-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+repository = "https://github.com/pevepee/gameboy-rs"
+authors = ["S0l60Xy3c3"]
+
+[workspace.dependencies]
+gb-core = { path = "crates/gb-core" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+# The Blargg suite is slow under debug assertions; profile it like a release.
+[profile.test]
+opt-level = 2

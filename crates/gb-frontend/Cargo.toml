@@ -1,0 +1,18 @@
+[package]
+name = "gb-frontend"
+description = "Native minifb frontend for the gb-core emulator."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "gameboy"
+path = "src/main.rs"
+
+[dependencies]
+gb-core.workspace = true
+clap = { version = "4.5", features = ["derive"] }
+minifb = "0.27"

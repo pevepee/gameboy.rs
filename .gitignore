@@ -1,0 +1,15 @@
+/target
+**/*.rs.bk
+Cargo.lock.orig
+
+# Test ROMs are fetched by scripts/fetch-test-roms.sh, never committed.
+/test-roms/*
+!/test-roms/.gitkeep
+
+# Local save files produced by the frontend.
+*.sav
+*.state
+
+# WASM build output
+/pkg
+/www/pkg

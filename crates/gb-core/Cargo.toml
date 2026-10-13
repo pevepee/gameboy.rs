@@ -1,0 +1,13 @@
+[package]
+name = "gb-core"
+description = "Cycle-driven DMG (Game Boy) emulation core: CPU, PPU, APU-less bus, cartridge mappers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
