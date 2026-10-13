@@ -347,7 +347,11 @@ impl Ppu {
             let flip_y = attr & 0x40 != 0;
             let flip_x = attr & 0x20 != 0;
             let behind_bg = attr & 0x80 != 0;
-            let palette = if attr & 0x10 != 0 { self.obp1 } else { self.obp0 };
+            let palette = if attr & 0x10 != 0 {
+                self.obp1
+            } else {
+                self.obp0
+            };
 
             let tile = if tall { raw_tile & 0xFE } else { raw_tile };
 
@@ -376,8 +380,7 @@ impl Ppu {
                     continue;
                 }
 
-                self.framebuffer[line as usize * WIDTH + sx] =
-                    self.apply_palette(bits, palette);
+                self.framebuffer[line as usize * WIDTH + sx] = self.apply_palette(bits, palette);
             }
         }
     }

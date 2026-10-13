@@ -100,7 +100,7 @@ impl Header {
     pub fn ram_size(&self) -> usize {
         match self.ram_size_code {
             0x00 => 0,
-            0x01 => 2 * 1024,   // MBC2's built-in nibble RAM
+            0x01 => 2 * 1024, // MBC2's built-in nibble RAM
             0x02 => 8 * 1024,
             0x03 => 32 * 1024,
             0x04 => 128 * 1024,
@@ -136,7 +136,13 @@ fn parse_title(rom: &[u8]) -> String {
     let text: String = raw[..end]
         .iter()
         .take_while(|&&b| b != 0)
-        .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { ' ' })
+        .map(|&b| {
+            if b.is_ascii_graphic() || b == b' ' {
+                b as char
+            } else {
+                ' '
+            }
+        })
         .collect();
 
     text.trim_end().to_string()

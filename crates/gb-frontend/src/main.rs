@@ -11,12 +11,7 @@ use gb_core::{Button, GameBoy, HEIGHT, WIDTH};
 use minifb::{Key, Scale, Window, WindowOptions};
 
 /// The four LCD shades, darkest first, as `0x00RRGGBB`.
-const PALETTE: [u32; 4] = [
-    0x00_0F_38_0F,
-    0x00_30_62_30,
-    0x00_8B_AC_0F,
-    0x00_9B_BC_0F,
-];
+const PALETTE: [u32; 4] = [0x00_0F_38_0F, 0x00_30_62_30, 0x00_8B_AC_0F, 0x00_9B_BC_0F];
 
 #[derive(Parser)]
 #[command(name = "gameboy", about = "Run a Game Boy ROM (DMG)")]
@@ -87,10 +82,7 @@ fn main() -> ExitCode {
             pixels[index] = PALETTE[usize::from(color & 0b11)];
         }
 
-        if window
-            .update_with_buffer(&pixels, WIDTH, HEIGHT)
-            .is_err()
-        {
+        if window.update_with_buffer(&pixels, WIDTH, HEIGHT).is_err() {
             break;
         }
 

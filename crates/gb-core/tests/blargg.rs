@@ -147,5 +147,8 @@ fn blargg_suite() {
 fn emulator_survives_an_empty_rom_directory() {
     // Guards the skip path itself: discovering nothing must not panic.
     let roms = discover_roms();
-    assert!(roms.len() < 100_000, "discovery returned an implausible count");
+    assert!(
+        roms.len() < 100_000,
+        "discovery returned an implausible count"
+    );
 }

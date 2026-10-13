@@ -35,7 +35,10 @@ impl MbcKind {
     /// Whether the cartridge type byte implies battery-backed RAM.
     #[must_use]
     pub fn has_battery(byte: u8) -> bool {
-        matches!(byte, 0x03 | 0x06 | 0x09 | 0x0D | 0x0F | 0x10 | 0x13 | 0x1B | 0x1E)
+        matches!(
+            byte,
+            0x03 | 0x06 | 0x09 | 0x0D | 0x0F | 0x10 | 0x13 | 0x1B | 0x1E
+        )
     }
 
     /// Number of 16 KiB ROM banks the mapper can address.
