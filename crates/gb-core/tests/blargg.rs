@@ -65,12 +65,18 @@ fn unsupported_rom(path: &Path) -> Option<&'static str> {
     let unsupported = [
         ("cgb_sound", "sound emulation is not implemented yet"),
         ("dmg_sound", "sound emulation is not implemented yet"),
-        ("cpu_instrs", "the combined CPU bundle still hangs in this emulator"),
+        (
+            "cpu_instrs",
+            "the combined CPU bundle still hangs in this emulator",
+        ),
         ("oam_bug", "OAM timing is not implemented yet"),
         ("interrupt_time", "interrupt timing is not implemented yet"),
         ("mem_timing", "memory timing is not implemented yet"),
         ("mem_timing-2", "memory timing is not implemented yet"),
-        ("halt_bug", "halt bug is not wired into the full ROM harness"),
+        (
+            "halt_bug",
+            "halt bug is not wired into the full ROM harness",
+        ),
     ];
 
     unsupported
