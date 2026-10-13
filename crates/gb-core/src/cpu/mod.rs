@@ -417,12 +417,6 @@ impl Cpu {
             0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x36 | 0x3E => {
                 let index = (op >> 3) & 7;
                 let value = self.fetch_u8(bus);
-
-                if index == 6 {
-                    bus.tick(8);
-                    self.pending_ticks += 8;
-                }
-
                 self.write_r(bus, index, value);
             }
 
